@@ -10,7 +10,7 @@ def get_config():
     config = ml_collections.ConfigDict()
 
     config.seed = 1234
-    config.z_shape = (4, 32, 32)
+    config.z_shape = (4, 32, 32) # (4, 64, 64)
 
     config.autoencoder = d(
         pretrained_path='assets/stable-diffusion/autoencoder_kl.pth',
@@ -20,7 +20,7 @@ def get_config():
     config.train = d(
         n_steps=1000000,
         batch_size=256,
-        log_interval=10,
+        log_interval=100,
         eval_interval=5000,
         save_interval=50000,
     )
@@ -39,12 +39,12 @@ def get_config():
 
     config.nnet = d(
         name='uvit_t2i',
-        img_size=32,
+        img_size=32, # 64
         in_chans=4,
         patch_size=2,
-        embed_dim=512, # small 512 12 8
-        depth=12, # 16 deep
-        num_heads=8,
+        embed_dim=1152, # huge 1152 28 16
+        depth=28,
+        num_heads=16,
         mlp_ratio=4,
         qkv_bias=False,
         mlp_time_embed=False,

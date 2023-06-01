@@ -1,3 +1,10 @@
+import os
+import sys
+
+# add python path of PadleDetection to sys.path
+parent_path = os.path.abspath(os.path.join(__file__, *(['..'] * 2)))
+sys.path.insert(0, parent_path)
+
 from tools.fid_score import calculate_fid_given_paths
 import ml_collections
 import torch
