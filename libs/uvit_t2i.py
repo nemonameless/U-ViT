@@ -78,12 +78,13 @@ class Attention(nn.Module):
             x = xformers.ops.memory_efficient_attention(q, k, v)
             x = einops.rearrange(x, 'B L H D -> B L (H D)', H=self.num_heads)
         elif ATTENTION_MODE == 'math':
-            qkv = einops.rearrange(qkv, 'B L (K H D) -> K B H L D', K=3, H=self.num_heads)
-            q, k, v = qkv[0], qkv[1], qkv[2]  # B H L D
-            attn = (q @ k.transpose(-2, -1)) * self.scale
-            attn = attn.softmax(dim=-1)
-            attn = self.attn_drop(attn)
-            x = (attn @ v).transpose(1, 2).reshape(B, L, C)
+            with torch.amp.autocast(device_type='cuda', enabled=False):
+                qkv = einops.rearrange(qkv, 'B L (K H D) -> K B H L D', K=3, H=self.num_heads).float()
+                q, k, v = qkv[0], qkv[1], qkv[2]  # B H L D
+                attn = (q @ k.transpose(-2, -1)) * self.scale
+                attn = attn.softmax(dim=-1)
+                attn = self.attn_drop(attn)
+                x = (attn @ v).transpose(1, 2).reshape(B, L, C)
         else:
             raise NotImplemented
 
@@ -97,10 +98,12 @@ class Block(nn.Module):
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None,
                  act_layer=nn.GELU, norm_layer=nn.LayerNorm, skip=False, use_checkpoint=False):
         super().__init__()
-        self.norm1 = norm_layer(dim)
+        #self.norm1 = norm_layer(dim) if skip else None
         self.attn = Attention(
             dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale)
         self.norm2 = norm_layer(dim)
+        self.drop_path = nn.Identity()
+        self.norm3 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer)
         self.skip_linear = nn.Linear(2 * dim, dim) if skip else None
@@ -115,9 +118,41 @@ class Block(nn.Module):
     def _forward(self, x, skip=None):
         if self.skip_linear is not None:
             x = self.skip_linear(torch.cat([x, skip], dim=-1))
-        x = x + self.attn(self.norm1(x))
-        x = x + self.mlp(self.norm2(x))
+            #x = self.norm1(x)
+        x = x + self.drop_path(self.attn(x))
+        x = self.norm2(x)
+
+        x = x + self.drop_path(self.mlp(x))
+        x = self.norm3(x)
         return x
+
+
+# class Block0(nn.Module):
+
+#     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None,
+#                  act_layer=nn.GELU, norm_layer=nn.LayerNorm, skip=False, use_checkpoint=False):
+#         super().__init__()
+#         self.norm1 = norm_layer(dim)
+#         self.attn = Attention(
+#             dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale)
+#         self.norm2 = norm_layer(dim)
+#         mlp_hidden_dim = int(dim * mlp_ratio)
+#         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer)
+#         self.skip_linear = nn.Linear(2 * dim, dim) if skip else None
+#         self.use_checkpoint = use_checkpoint
+
+#     def forward(self, x, skip=None):
+#         if self.use_checkpoint:
+#             return torch.utils.checkpoint.checkpoint(self._forward, x, skip)
+#         else:
+#             return self._forward(x, skip)
+
+#     def _forward(self, x, skip=None):
+#         if self.skip_linear is not None:
+#             x = self.skip_linear(torch.cat([x, skip], dim=-1))
+#         x = x + self.attn(self.norm1(x))
+#         x = x + self.mlp(self.norm2(x))
+#         return x
 
 
 class PatchEmbed(nn.Module):
