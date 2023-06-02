@@ -11,7 +11,8 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from dpm_solver_pp import NoiseScheduleVP, DPM_Solver
 import tempfile
-from tools.fid_score import calculate_fid_given_paths
+#from tools.fid_score import calculate_fid_given_paths
+from fid_score import calculate_fid_given_paths
 from absl import logging
 import builtins
 import os

@@ -5,7 +5,8 @@ import sys
 parent_path = os.path.abspath(os.path.join(__file__, *(['..'] * 2)))
 sys.path.insert(0, parent_path)
 
-from tools.fid_score import calculate_fid_given_paths
+#from tools.fid_score import calculate_fid_given_paths
+from fid_score import calculate_fid_given_paths
 import ml_collections
 import torch
 from torch import multiprocessing as mp
