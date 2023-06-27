@@ -18,11 +18,11 @@ def get_config():
     )
 
     config.train = d(
-        n_steps=1000000,
-        batch_size=256,
-        log_interval=100,
-        eval_interval=5000,
-        save_interval=50000,
+        n_steps=500000,
+        batch_size=1024,
+        log_interval=200,
+        eval_interval=20000,
+        save_interval=20000,
     )
 
     config.optimizer = d(

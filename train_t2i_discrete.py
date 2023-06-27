@@ -127,10 +127,10 @@ def train(config):
     assert os.path.exists(dataset.fid_stat)
     train_dataset = dataset.get_split(split='train', labeled=True)
     train_dataset_loader = DataLoader(train_dataset, batch_size=mini_batch_size, shuffle=True, drop_last=True,
-                                      num_workers=8, pin_memory=True, persistent_workers=True)
+                                      num_workers=16, pin_memory=True, persistent_workers=True)
     test_dataset = dataset.get_split(split='test', labeled=True)  # for sampling
     test_dataset_loader = DataLoader(test_dataset, batch_size=config.sample.mini_batch_size, shuffle=True, drop_last=True,
-                                     num_workers=8, pin_memory=True, persistent_workers=True)
+                                     num_workers=16, pin_memory=True, persistent_workers=True)
 
     train_state = utils.initialize_train_state(config, device)
     nnet, nnet_ema, optimizer, train_dataset_loader, test_dataset_loader = accelerator.prepare(

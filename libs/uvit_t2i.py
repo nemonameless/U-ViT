@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
 import math
-from .timm import trunc_normal_, Mlp
+from .timm import trunc_normal_, DropPath, Mlp
 import einops
 import torch.utils.checkpoint
+import torch.nn.functional as F
+import numpy as np
 
 if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
     ATTENTION_MODE = 'flash'
@@ -51,6 +53,13 @@ def unpatchify(x, channels=3):
     return x
 
 
+# def interpolate_pos_emb(pos_emb, old_shape, new_shape):
+#     pos_emb = einops.rearrange(pos_emb, 'B (H W) C -> B C H W', H=old_shape[0], W=old_shape[1])
+#     pos_emb = F.interpolate(pos_emb, new_shape, mode='bilinear')
+#     pos_emb = einops.rearrange(pos_emb, 'B C H W -> B (H W) C')
+#     return pos_emb
+
+
 class Attention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
         super().__init__()
@@ -95,17 +104,17 @@ class Attention(nn.Module):
 
 class Block(nn.Module):
 
-    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None,
-                 act_layer=nn.GELU, norm_layer=nn.LayerNorm, skip=False, use_checkpoint=False):
+    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
+                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, skip=False, use_checkpoint=False):
         super().__init__()
-        #self.norm1 = norm_layer(dim) if skip else None
+        self.norm1 = norm_layer(dim) if skip else None
         self.attn = Attention(
-            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale)
+            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
         self.norm2 = norm_layer(dim)
-        self.drop_path = nn.Identity()
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity() # always 0.
         self.norm3 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer)
+        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
         self.skip_linear = nn.Linear(2 * dim, dim) if skip else None
         self.use_checkpoint = use_checkpoint
 
@@ -118,7 +127,7 @@ class Block(nn.Module):
     def _forward(self, x, skip=None):
         if self.skip_linear is not None:
             x = self.skip_linear(torch.cat([x, skip], dim=-1))
-            #x = self.norm1(x)
+            x = self.norm1(x)
         x = x + self.drop_path(self.attn(x))
         x = self.norm2(x)
 
@@ -127,32 +136,33 @@ class Block(nn.Module):
         return x
 
 
-# class Block0(nn.Module):
+class Block_0(nn.Module):
 
-#     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None,
-#                  act_layer=nn.GELU, norm_layer=nn.LayerNorm, skip=False, use_checkpoint=False):
-#         super().__init__()
-#         self.norm1 = norm_layer(dim)
-#         self.attn = Attention(
-#             dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale)
-#         self.norm2 = norm_layer(dim)
-#         mlp_hidden_dim = int(dim * mlp_ratio)
-#         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer)
-#         self.skip_linear = nn.Linear(2 * dim, dim) if skip else None
-#         self.use_checkpoint = use_checkpoint
+    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
+                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, skip=False, use_checkpoint=False):
+        super().__init__()
+        self.norm1 = norm_layer(dim) #if skip else None
+        self.attn = Attention(
+            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
+        self.norm2 = norm_layer(dim)
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity() # always 0.
+        mlp_hidden_dim = int(dim * mlp_ratio)
+        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
+        self.skip_linear = nn.Linear(2 * dim, dim) if skip else None
+        self.use_checkpoint = use_checkpoint
 
-#     def forward(self, x, skip=None):
-#         if self.use_checkpoint:
-#             return torch.utils.checkpoint.checkpoint(self._forward, x, skip)
-#         else:
-#             return self._forward(x, skip)
+    def forward(self, x, skip=None):
+        if self.use_checkpoint:
+            return torch.utils.checkpoint.checkpoint(self._forward, x, skip)
+        else:
+            return self._forward(x, skip)
 
-#     def _forward(self, x, skip=None):
-#         if self.skip_linear is not None:
-#             x = self.skip_linear(torch.cat([x, skip], dim=-1))
-#         x = x + self.attn(self.norm1(x))
-#         x = x + self.mlp(self.norm2(x))
-#         return x
+    def _forward(self, x, skip=None):
+        if self.skip_linear is not None:
+            x = self.skip_linear(torch.cat([x, skip], dim=-1))
+        x = x + self.attn(self.norm1(x))
+        x = x + self.mlp(self.norm2(x))
+        return x
 
 
 class PatchEmbed(nn.Module):
@@ -172,7 +182,7 @@ class PatchEmbed(nn.Module):
 
 class UViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.,
-                 qkv_bias=False, qk_scale=None, norm_layer=nn.LayerNorm, mlp_time_embed=False, use_checkpoint=False,
+                 qkv_bias=False, qk_scale=None, pos_drop_rate=0., drop_rate=0.1, attn_drop_rate=0., norm_layer=nn.LayerNorm, mlp_time_embed=False, use_checkpoint=False,
                  clip_dim=768, num_clip_token=77, conv=True, skip=True):
         super().__init__()
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
@@ -192,22 +202,24 @@ class UViT(nn.Module):
         self.extras = 1 + num_clip_token
 
         self.pos_embed = nn.Parameter(torch.zeros(1, self.extras + num_patches, embed_dim))
+        self.pos_drop = nn.Dropout(p=pos_drop_rate)
 
+        dpr = np.linspace(0, drop_rate, depth + 1)
         self.in_blocks = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
-                norm_layer=norm_layer, use_checkpoint=use_checkpoint)
-            for _ in range(depth // 2)])
+                drop=dpr[i], attn_drop=attn_drop_rate, norm_layer=norm_layer, use_checkpoint=use_checkpoint)
+            for i in range(depth // 2)])
 
         self.mid_block = Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
-                norm_layer=norm_layer, use_checkpoint=use_checkpoint)
+                drop=dpr[depth // 2], attn_drop=attn_drop_rate, norm_layer=norm_layer, use_checkpoint=use_checkpoint)
 
         self.out_blocks = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
-                norm_layer=norm_layer, skip=skip, use_checkpoint=use_checkpoint)
-            for _ in range(depth // 2)])
+                drop=dpr[i + 1 + depth // 2], attn_drop=attn_drop_rate, norm_layer=norm_layer, skip=True, use_checkpoint=use_checkpoint)
+            for i in range(depth // 2)])
 
         self.norm = norm_layer(embed_dim)
         self.patch_dim = patch_size ** 2 * in_chans
@@ -239,7 +251,7 @@ class UViT(nn.Module):
         context_token = self.context_embed(context)
         x = torch.cat((time_token, context_token, x), dim=1)
         x = x + self.pos_embed
-
+        x = self.pos_drop(x)
         skips = []
         for blk in self.in_blocks:
             x = blk(x)
