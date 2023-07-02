@@ -487,14 +487,14 @@ class MSCOCOFeatureDataset(Dataset):
         return self.num_data
 
     def __getitem__(self, index):
-        z = np.load(os.path.join(self.root, f'{index}.npy'))
+        z = np.load(os.path.join(self.root, f'{index}.npy')) #
         k = random.randint(0, self.n_captions[index] - 1)
-        c = np.load(os.path.join(self.root, f'{index}_{k}.npy'))
+        c = np.load(os.path.join(self.root, f'{index}_{k}.npy')) #
         return z, c
 
 
 class MSCOCO256Features(DatasetFactory):  # the moments calculated by Stable Diffusion image encoder & the contexts calculated by clip
-    def __init__(self, path, cfg=False, p_uncond=None):
+    def __init__(self, path='assets/datasets/coco256_features', cfg=True, p_uncond=0.1): # 1 0.1
         super().__init__()
         print('Prepare dataset...')
         self.train = MSCOCOFeatureDataset(os.path.join(path, 'train'))
@@ -508,7 +508,7 @@ class MSCOCO256Features(DatasetFactory):  # the moments calculated by Stable Dif
         if cfg:  # classifier free guidance
             assert p_uncond is not None
             print(f'prepare the dataset for classifier free guidance with p_uncond={p_uncond}')
-            self.train = CFGDataset(self.train, p_uncond, self.empty_context)
+            self.train = CFGDataset(self.train, p_uncond, self.empty_context) # cfg
 
         # text embedding extracted by clip
         # for visulization in t2i

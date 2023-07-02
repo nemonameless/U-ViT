@@ -19,6 +19,7 @@ import os
 import wandb
 import libs.autoencoder
 import numpy as np
+from IPython import embed
 
 
 def stable_diffusion_beta_schedule(linear_start=0.00085, linear_end=0.0120, n_timestep=1000):
@@ -88,7 +89,7 @@ class Schedule(object):  # discrete time
 
 def LSimple(x0, nnet, schedule, **kwargs):
     n, eps, xn = schedule.sample(x0)  # n in {1, ..., 1000}
-    eps_pred = nnet(xn, n, **kwargs) # xn.shape [bs, 4, 32, 32]
+    eps_pred = nnet(xn, n, **kwargs) # [1024, 4, 32, 32]
     return mos(eps - eps_pred)
 
 
@@ -122,6 +123,7 @@ def train(config):
         utils.set_logger(log_level='error')
         builtins.print = lambda *args: None
     logging.info(f'Run on {accelerator.num_processes} devices')
+
 
     dataset = get_dataset(**config.dataset)
     assert os.path.exists(dataset.fid_stat)
@@ -168,18 +170,21 @@ def train(config):
     _schedule = Schedule(_betas)
     logging.info(f'use {_schedule}')
 
-    def cfg_nnet(x, timesteps, context):
-        _cond = nnet_ema(x, timesteps, context=context)
+    def cfg_nnet(x, timesteps, encoder_hidden_states):
+        #_cond = nnet_ema(x, timesteps, context=context)
+        _cond = nnet_ema(x, timesteps, encoder_hidden_states=encoder_hidden_states)
         _empty_context = torch.tensor(dataset.empty_context, device=device)
         _empty_context = einops.repeat(_empty_context, 'L D -> B L D', B=x.size(0))
-        _uncond = nnet_ema(x, timesteps, context=_empty_context)
+        #_uncond = nnet_ema(x, timesteps, context=_empty_context)
+        _uncond = nnet_ema(x, timesteps, encoder_hidden_states=encoder_hidden_states)
         return _cond + config.sample.scale * (_cond - _uncond)
 
     def train_step(_batch):
         _metrics = dict()
         optimizer.zero_grad()
-        _z = autoencoder.sample(_batch[0]) if 'feature' in config.dataset.name else encode(_batch[0])
-        loss = LSimple(_z, nnet, _schedule, context=_batch[1])  # currently only support the extracted feature version
+        _z = autoencoder.sample(_batch[0]) if 'feature' in config.dataset.name else encode(_batch[0]) # _batch[0] z [1] c
+        #loss = LSimple(_z, nnet, _schedule, context=_batch[1])  # currently only support the extracted feature version
+        loss = LSimple(_z, nnet, _schedule, encoder_hidden_states=_batch[1])  # currently only support the extracted feature version
         _metrics['loss'] = accelerator.gather(loss.detach()).mean()
         accelerator.backward(loss.mean())
         optimizer.step()
@@ -207,7 +212,8 @@ def train(config):
         def sample_fn(_n_samples):
             _context = next(context_generator)
             assert _context.size(0) == _n_samples
-            return dpm_solver_sample(_n_samples, sample_steps, context=_context)
+            #return dpm_solver_sample(_n_samples, sample_steps, context=_context)
+            return dpm_solver_sample(_n_samples, sample_steps, encoder_hidden_states=_context)
 
         with tempfile.TemporaryDirectory() as temp_path:
             path = config.sample.path or temp_path
@@ -245,7 +251,8 @@ def train(config):
             torch.cuda.empty_cache()
             logging.info('Save a grid of images...')
             contexts = torch.tensor(dataset.contexts, device=device)[: 2 * 5]
-            samples = dpm_solver_sample(_n_samples=2 * 5, _sample_steps=50, context=contexts)
+            #samples = dpm_solver_sample(_n_samples=2 * 5, _sample_steps=50, context=contexts)
+            samples = dpm_solver_sample(_n_samples=2 * 5, _sample_steps=50, encoder_hidden_states=contexts)
             samples = make_grid(dataset.unpreprocess(samples), 5)
             save_image(samples, os.path.join(config.sample_dir, f'{train_state.step}.png'))
             wandb.log({'samples': wandb.Image(samples)}, step=train_state.step)

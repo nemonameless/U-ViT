@@ -19,7 +19,7 @@ def get_config():
 
     config.train = d(
         n_steps=500000,
-        batch_size=1024,
+        batch_size=512, # 
         log_interval=200,
         eval_interval=20000,
         save_interval=20000,
@@ -62,7 +62,7 @@ def get_config():
     config.sample = d(
         sample_steps=50,
         n_samples=30000,
-        mini_batch_size=50,
+        mini_batch_size=32, #50,
         cfg=True,
         scale=1.,
         path=''

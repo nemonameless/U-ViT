@@ -182,7 +182,7 @@ class PatchEmbed(nn.Module):
 
 class UViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.,
-                 qkv_bias=False, qk_scale=None, pos_drop_rate=0., drop_rate=0.1, attn_drop_rate=0., norm_layer=nn.LayerNorm, mlp_time_embed=False, use_checkpoint=False,
+                 qkv_bias=False, qk_scale=None, pos_drop_rate=0., drop_rate=0., attn_drop_rate=0., norm_layer=nn.LayerNorm, mlp_time_embed=False, use_checkpoint=False,
                  clip_dim=768, num_clip_token=77, conv=True, skip=True):
         super().__init__()
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
@@ -204,7 +204,8 @@ class UViT(nn.Module):
         self.pos_embed = nn.Parameter(torch.zeros(1, self.extras + num_patches, embed_dim))
         self.pos_drop = nn.Dropout(p=pos_drop_rate)
 
-        dpr = np.linspace(0, drop_rate, depth + 1)
+        #dpr = np.linspace(0, drop_rate, depth + 1)
+        dpr = [0.] * (depth + 1)
         self.in_blocks = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
@@ -248,7 +249,7 @@ class UViT(nn.Module):
 
         time_token = self.time_embed(timestep_embedding(timesteps, self.embed_dim))
         time_token = time_token.unsqueeze(dim=1)
-        context_token = self.context_embed(context)
+        context_token = self.context_embed(context) ### [4, 77, 768]->[4, 77, 1280]
         x = torch.cat((time_token, context_token, x), dim=1)
         x = x + self.pos_embed
         x = self.pos_drop(x)
