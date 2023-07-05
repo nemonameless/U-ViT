@@ -42,9 +42,9 @@ def get_config():
         img_size=32,
         in_chans=4,
         patch_size=2,
-        embed_dim=1280, # gaint2 in unidiffuser 1536 30 24
+        embed_dim=1536, # gaint2
         depth=30,
-        num_heads=20,
+        num_heads=24,
         mlp_ratio=4,
         qkv_bias=False,
         mlp_time_embed=False,
